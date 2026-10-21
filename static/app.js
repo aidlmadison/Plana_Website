@@ -7,16 +7,16 @@ function toast(message, error=false) { $('toast').textContent=message; $('toast'
 async function api(path, data) {
   const response = await fetch(path, {credentials:'same-origin',headers:{'Content-Type':'application/json',...(state.user ? {'X-CSRF-Token':state.user.csrf} : {})},...(data===undefined?{}:{method:'POST',body:JSON.stringify(data)})});
   const value=await response.json();
-  if(!response.ok){if(response.status===401 && path!=='/api/login')showLogin(); throw new Error(value.error || 'Something went wrong. Please try again.');}
+  if(!response.ok){if(response.status===401 && path!=='/api/login')showLogin(); const error=new Error(value.error || 'Something went wrong. Please try again.');error.status=response.status;throw error;}
   return value;
 }
-function showLogin(){clearStudentAccess();state.user=null;state.submission=null;$('workspace').hidden=true;$('login-view').hidden=false;}
+function showLogin(){if($('delete-batch-dialog').open)$('delete-batch-dialog').close();if($('batches-dialog').open)$('batches-dialog').close();$('batch-list').replaceChildren();clearStudentAccess();state.user=null;state.submission=null;$('workspace').hidden=true;$('login-view').hidden=false;}
 function setRole(role){state.role=role;document.querySelectorAll('[data-role]').forEach(button=>{button.classList.toggle('active',button.dataset.role===role);button.setAttribute('aria-pressed',button.dataset.role===role)});document.querySelector('label[for="identifier"]').textContent=role==='student'?'Student identifier':'Instructor identifier';$('identifier').placeholder=role==='student'?'e.g. piermaeryn':'e.g. instructor1';$('login-error').textContent='';}
 document.querySelectorAll('[data-role]').forEach(button=>button.addEventListener('click',()=>setRole(button.dataset.role)));
 $('login-form').addEventListener('submit',async event=>{event.preventDefault(); const button=event.submitter;button.disabled=true;$('login-error').textContent='';try{state.user=await api('/api/login',{identifier:$('identifier').value.trim(),key:$('access-key').value.trim(),role:state.role});$('access-key').value='';await enterWorkspace();}catch(error){$('login-error').textContent=error.message;}finally{button.disabled=false;}});
 $('logout').addEventListener('click',async()=>{try{await api('/api/logout',{});showLogin();}catch(error){toast(error.message,true)}});
-async function enterWorkspace(){ $('login-view').hidden=true;$('workspace').hidden=false;$('portal-label').textContent=state.user.role+' portal';$('finding-filter').querySelector('option[value="pending"]').textContent=state.user.role==='student'?'Instructor reviewed':'Awaiting review';$('account-name').textContent=state.user.id;$('workspace-eyebrow').textContent=state.user.role==='student'?'STUDENT WORKSPACE':'INSTRUCTOR WORKSPACE';$('import-data').hidden=state.user.role!=='instructor';$('upload-evaluation').hidden=state.user.role!=='instructor';$('student-access').hidden=state.user.role!=='instructor';$('report-mistake').closest('.report-footer').hidden=state.user.role!=='student'; await loadSubmissions(); }
-async function loadSubmissions(preferred){state.submissions=await api('/api/submissions');const select=$('submission-select');select.replaceChildren();for(const item of state.submissions){const option=document.createElement('option');option.value=item.id;option.textContent=`${item.student_id} · ${item.label}${item.pending?' · '+item.pending+' pending':''}`;select.append(option)}$('empty-state').hidden=!!state.submissions.length;$('review-layout').hidden=!state.submissions.length;if(state.submissions.length){select.value=state.submissions.some(item=>item.id===preferred)?preferred:state.submissions[0].id;await selectSubmission(select.value);} }
+async function enterWorkspace(){ $('login-view').hidden=true;$('workspace').hidden=false;$('portal-label').textContent=state.user.role+' portal';$('finding-filter').querySelector('option[value="pending"]').textContent=state.user.role==='student'?'Instructor reviewed':'Awaiting review';$('account-name').textContent=state.user.id;$('workspace-eyebrow').textContent=state.user.role==='student'?'STUDENT WORKSPACE':'INSTRUCTOR WORKSPACE';$('import-data').hidden=state.user.role!=='instructor';$('upload-evaluation').hidden=state.user.role!=='instructor';$('student-access').hidden=state.user.role!=='instructor';$('manage-batches').hidden=state.user.role!=='instructor';$('report-mistake').closest('.report-footer').hidden=state.user.role!=='student'; await loadSubmissions(); }
+async function loadSubmissions(preferred){state.submissions=await api('/api/submissions');const select=$('submission-select');select.replaceChildren();for(const item of state.submissions){const option=document.createElement('option');option.value=item.id;option.textContent=`${item.student_id} · ${item.label}${item.pending?' · '+item.pending+' pending':''}`;select.append(option)}$('empty-state').hidden=!!state.submissions.length;$('review-layout').hidden=!state.submissions.length;if(state.submissions.length){select.value=state.submissions.some(item=>item.id===preferred)?preferred:state.submissions[0].id;await selectSubmission(select.value);}else{state.submission=null;state.selected=null;$('page-image').removeAttribute('src');$('findings').replaceChildren();$('boxes').replaceChildren();$('student-heading').textContent='Drawing review';$('assignment-label').textContent='';$('original-score').textContent='—';$('adjusted-score').textContent='—';$('notes').hidden=true;$('empty-state').textContent=state.user.role==='student'?'No evaluations are currently available. Your instructor can make a batch visible.':'No drawings have been assigned yet.';} }
 async function selectSubmission(sid){cancelDraw();state.rebuttal=null;state.reviewEdit=null;state.selected=null;state.page=1;state.zoom=1;await loadSubmission(sid,true);}
 async function loadSubmission(sid=state.submission?.id,resetImage=false){if(!sid)return;const load=++state.load;const value=await api('/api/submission?submission='+encodeURIComponent(sid));if(load!==state.load)return;state.submission=value;if(!value.findings.some(item=>item.id===state.selected))state.selected=null;state.page=Math.min(state.page,value.pages);renderHeader();renderFindings();if(resetImage)renderPage();else renderBoxes();}
 function formatScore(value){return Number(value.toFixed(2)).toString()}
@@ -100,7 +100,7 @@ $('catalog-info').addEventListener('click', () => {
 $('catalog-close').addEventListener('click', () => $('catalog-dialog').close());
 $('catalog-search').addEventListener('input', () => { renderCatalog(); $('catalog-cards').scrollTop = 0; });
 // Keep shared instructor decisions current without replacing a draft in progress.
-setInterval(async()=>{if(!state.user || !state.submission || state.busy || hasDraft() || document.hidden)return;try{const value=await api('/api/submission?submission='+encodeURIComponent(state.submission.id));if(value.id===state.submission.id&&JSON.stringify(value)!==JSON.stringify(state.submission)&&!hasDraft()&&!state.busy){state.submission=value;renderHeader();renderFindings();renderBoxes();}}catch{}},15000);
+setInterval(async()=>{if(!state.user || state.busy || document.hidden)return;if(state.user.role==='student'&&!state.submission){try{await loadSubmissions()}catch{}return;}if(!state.submission||hasDraft())return;try{const value=await api('/api/submission?submission='+encodeURIComponent(state.submission.id));if(value.id===state.submission.id&&JSON.stringify(value)!==JSON.stringify(state.submission)&&!hasDraft()&&!state.busy){state.submission=value;renderHeader();renderFindings();renderBoxes();}}catch(error){if(error.status===404&&state.user?.role==='student'){await loadSubmissions();toast('Your available evaluations have changed.');}}},15000);
 (async()=>{setRole('student');try{state.user=await api('/api/me');await enterWorkspace()}catch{showLogin()}})();
 
 // Instructor credentials reference for manual email delivery.
@@ -192,4 +192,57 @@ $('evaluation-file').addEventListener('change',async event=>{
     if(!response.ok)throw new Error(result.error||'Could not import the evaluation.');
     await loadSubmissions(state.submission?.id);importNotice(result);
   }catch(error){toast(error.message,true)}finally{button.disabled=false;button.textContent='＋ Import evaluation ZIP';event.target.value='';}
+});
+
+// Instructor control over student access to complete evaluation batches.
+let batchRows=[],deletePreview=null,deleteBusy=false;
+async function loadBatches(){
+  const [rows,storage]=await Promise.all([api('/api/batches'),api('/api/batches/storage')]);batchRows=rows;$('batch-cleanup').hidden=!storage.pending;$('batch-storage-status').textContent=storage.pending?'Some deleted files are awaiting cleanup. Use Finish pending deletions to free the remaining storage.':'';
+  $('batch-list').innerHTML=batchRows.length?batchRows.map(item=>`<article class="batch-card"><div><h3>${escapeHTML(item.label)}</h3><p class="muted">${item.students} student submission(s) · ${escapeHTML(new Date(item.imported*1000).toLocaleString())}</p><p>${item.visible?'Visible to students':'Hidden from students · saved for instructors'}</p></div><label><input type="checkbox" data-batch="${escapeHTML(item.id)}" ${item.visible?'checked':''}> Visible to students</label><button class="delete-batch-button" data-delete-batch="${escapeHTML(item.id)}" type="button">Delete batch…</button></article>`).join(''):'<p class="empty">Import an evaluation ZIP to add a batch.</p>';
+}
+$('manage-batches').addEventListener('click',async()=>{
+  $('batches-error').textContent='';$('batch-list').replaceChildren();$('batches-dialog').showModal();
+  try{await loadBatches()}catch(error){$('batches-error').textContent=error.message;}
+});
+$('batches-close').addEventListener('click',()=>$('batches-dialog').close());
+$('batches-refresh').addEventListener('click',async()=>{try{await loadBatches();$('batches-error').textContent='';}catch(error){$('batches-error').textContent=error.message;}});
+$('batch-list').addEventListener('change',async event=>{
+  const input=event.target.closest('[data-batch]');if(!input)return;
+  const row=batchRows.find(item=>item.id===input.dataset.batch);input.disabled=true;$('batches-error').textContent='';
+  try{await api('/api/batches/visibility',{assignment:row.id,visible:input.checked,version:row.version});await loadBatches();toast(input.checked?'Batch is visible to students.':'Batch hidden from students. Saved reviews are preserved.');}
+  catch(error){input.checked=row.visible;input.disabled=false;$('batches-error').textContent=error.message;}
+});
+
+function storageSize(bytes){return bytes>=1024*1024?`${(bytes/1024/1024).toFixed(1)} MB`:`${Math.ceil(bytes/1024)} KB`;}
+$('batch-list').addEventListener('click',async event=>{
+  const button=event.target.closest('[data-delete-batch]');if(!button)return;
+  if(hasDraft())return toast('Save or cancel your feedback draft before deleting a batch.',true);
+  button.disabled=true;$('batches-error').textContent='';
+  try{
+    deletePreview=await api('/api/batches/delete-preview?assignment='+encodeURIComponent(button.dataset.deleteBatch));
+    $('delete-batch-name').textContent=deletePreview.label;
+    $('delete-batch-summary').textContent=`${deletePreview.students} student submissions · ${deletePreview.findings} findings · approximately ${storageSize(deletePreview.bytes)} across ${deletePreview.copies} stored copies will be removed.`;
+    $('delete-batch-confirmation').value='';$('delete-batch-submit').disabled=true;$('delete-batch-error').textContent='';
+    $('delete-batch-dialog').showModal();$('delete-batch-confirmation').focus();
+  }catch(error){$('batches-error').textContent=error.message;}finally{button.disabled=false;}
+});
+$('delete-batch-confirmation').addEventListener('input',()=>{$('delete-batch-submit').disabled=deleteBusy||$('delete-batch-confirmation').value!=='DELETE';});
+$('delete-batch-cancel').addEventListener('click',()=>{if(!deleteBusy){$('delete-batch-dialog').close();deletePreview=null;}});
+$('delete-batch-dialog').addEventListener('cancel',event=>{if(deleteBusy)event.preventDefault();});
+$('delete-batch-form').addEventListener('submit',async event=>{
+  event.preventDefault();if(deleteBusy||!deletePreview||$('delete-batch-confirmation').value!=='DELETE')return;
+  deleteBusy=true;$('delete-batch-submit').disabled=true;$('delete-batch-cancel').disabled=true;$('delete-batch-error').textContent='';
+  try{
+    const result=await api('/api/batches/delete',{assignment:deletePreview.assignment,token:deletePreview.token,confirmation:'DELETE'});
+    $('delete-batch-dialog').close();deletePreview=null;
+    await loadBatches();await loadSubmissions(state.submission?.id);
+    toast(result.cleanup_pending?'Batch deleted. Some files are busy; use Finish pending deletions to complete storage cleanup.':`Batch deleted. Approximately ${storageSize(result.bytes)} of batch files removed.`,result.cleanup_pending);
+  }catch(error){$('delete-batch-error').textContent=error.message;}
+  finally{deleteBusy=false;$('delete-batch-submit').disabled=$('delete-batch-confirmation').value!=='DELETE';$('delete-batch-cancel').disabled=false;}
+});
+$('batch-cleanup').addEventListener('click',async()=>{
+  $('batch-cleanup').disabled=true;
+  try{const result=await api('/api/batches/cleanup',{});await loadBatches();toast(result.pending?'Some files are still busy. Try cleanup again shortly.':'Pending deletions completed.',!!result.pending);}
+  catch(error){$('batches-error').textContent=error.message;}
+  finally{$('batch-cleanup').disabled=false;}
 });

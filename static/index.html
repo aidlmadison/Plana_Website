@@ -10,7 +10,7 @@
   <div class="login-panel"><div class="login-box"><p class="eyebrow">YOUR REVIEW WORKSPACE</p><h2>Welcome to Plana</h2><p class="muted">Sign in with your identifier and private access key.</p><div class="role-tabs" role="group" aria-label="Portal"><button type="button" class="active" data-role="student">Student</button><button type="button" data-role="instructor">Instructor</button></div><form id="login-form"><label for="identifier">Student identifier</label><input id="identifier" name="identifier" autocomplete="username" placeholder="e.g. piermaeryn" required maxlength="80"><label for="access-key">Access key</label><input id="access-key" name="key" type="password" autocomplete="current-password" placeholder="Your private access key" required maxlength="200"><button class="primary login-submit" type="submit">Open my workspace <span>↗</span></button><p id="login-error" class="error" role="alert"></p></form><p class="login-help">Students: use the key in your invitation email.<br>Instructors: use your assigned instructor account.</p></div></div>
 </section>
 <section id="workspace" hidden>
-  <header class="topbar"><a class="brand" href="/">plana<span> / drawing review</span></a><div class="account"><button id="student-access" class="quiet access-launch" hidden aria-haspopup="dialog" aria-controls="credentials-dialog">Student credentials</button><span id="portal-label" class="portal-badge"></span><span id="account-name"></span><button id="logout" class="quiet">Sign out ↗</button></div></header>
+  <header class="topbar"><a class="brand" href="/">plana<span> / drawing review</span></a><div class="account"><button id="manage-batches" class="quiet access-launch" hidden aria-haspopup="dialog" aria-controls="batches-dialog">Manage batches</button><button id="student-access" class="quiet access-launch" hidden aria-haspopup="dialog" aria-controls="credentials-dialog">Student credentials</button><span id="portal-label" class="portal-badge"></span><span id="account-name"></span><button id="logout" class="quiet">Sign out ↗</button></div></header>
   <main>
     <div class="workspace-heading"><div><p class="eyebrow" id="workspace-eyebrow">STUDENT WORKSPACE</p><h1 id="student-heading">Drawing review</h1><p id="assignment-label" class="muted"></p></div><div class="score-group"><div class="score"><span>AI evaluation</span><strong id="original-score">—</strong></div><span class="score-arrow">→</span><div class="score adjusted"><span>After review</span><strong id="adjusted-score">—</strong></div></div></div>
     <div class="toolbar"><div class="submission-picker"><label for="submission-select">Submission</label><select id="submission-select"></select></div><div><button id="upload-evaluation" class="quiet" hidden>＋ Import evaluation ZIP</button><input id="evaluation-file" type="file" accept=".zip,application/zip" hidden><button id="import-data" class="quiet" hidden>↻ Check import folders</button><button id="refresh" class="quiet">↻ Refresh feedback</button><button id="scoring-info" class="quiet">ⓘ Grading rules</button><button id="catalog-info" class="quiet catalog-launch" aria-haspopup="dialog" aria-controls="catalog-dialog">▦ Mistake catalog</button></div></div>
@@ -39,6 +39,23 @@
   <header class="catalog-header"><div><p class="eyebrow">DRAWING REFERENCE</p><h2 id="catalog-title">Mistake catalog</h2><p class="muted">Explore every mistake in this evaluation’s catalog, including descriptions and examples.</p></div><button id="catalog-close" class="icon-button" type="button" aria-label="Close mistake catalog">×</button></header>
   <div class="catalog-tools"><label class="sr-only" for="catalog-search">Search mistake catalog</label><input id="catalog-search" type="search" placeholder="Search by ID, description, theme, or example…" autocomplete="off"><p id="catalog-count" class="muted" role="status" aria-live="polite"></p></div>
   <div id="catalog-cards" class="catalog-cards" role="region" aria-label="All catalog mistakes" tabindex="0"></div>
+</dialog>
+<dialog id="batches-dialog" class="batches-dialog" aria-labelledby="batches-title">
+  <header class="batches-header"><div><h2 id="batches-title">Manage evaluation batches</h2><p class="muted">Choose which batches students can see. Hide older batches to show only the current one. Hidden batches keep all PDFs, requests, and instructor decisions.</p></div><button id="batches-close" class="icon-button" aria-label="Close evaluation batches">×</button></header>
+  <p class="muted">New imports are visible by default. Changes save immediately and apply to every student in that batch.</p>
+  <button id="batches-refresh" class="quiet">Refresh batch list</button><button id="batch-cleanup" class="quiet" hidden>Finish pending deletions</button><p id="batch-storage-status" class="muted" role="status"></p><p id="batches-error" class="error" role="alert"></p>
+  <div id="batch-list" class="batch-list"></div>
+</dialog>
+<dialog id="delete-batch-dialog" class="delete-batch-dialog" aria-labelledby="delete-batch-title">
+  <form id="delete-batch-form">
+    <h2 id="delete-batch-title">Permanently delete this batch?</h2>
+    <h3 id="delete-batch-name"></h3><p id="delete-batch-summary"></p>
+    <p>This removes the batch's PDFs, AI results, student rebuttals and self-reports, and instructor decisions from this website. Student login accounts and other batches are kept. This cannot be undone in the website.</p>
+    <p class="muted">Original evaluation folders on your computer and any separate backups are kept. Reuploading the original ZIP later starts a new copy without the deleted reviews.</p>
+    <label for="delete-batch-confirmation">Type DELETE to confirm</label><input id="delete-batch-confirmation" required pattern="DELETE" autocomplete="off" spellcheck="false">
+    <p id="delete-batch-error" class="error" role="alert"></p>
+    <div class="dialog-actions"><button id="delete-batch-cancel" class="quiet" type="button">Cancel</button><button id="delete-batch-submit" class="delete-batch-button" type="submit" disabled>Permanently delete batch</button></div>
+  </form>
 </dialog>
 <dialog id="credentials-dialog" class="credentials-dialog" aria-labelledby="credentials-title">
   <header class="credentials-header"><div><h2 id="credentials-title">Student credentials</h2><p>Student identifiers, roster names, emails, and login keys for manual email delivery.</p></div><button id="credentials-close" class="icon-button" aria-label="Close student credentials">×</button></header>

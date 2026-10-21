@@ -68,3 +68,13 @@ node --check static/app.js
 ```
 
 Tests use temporary data and synthetic PDFs; they do not call Gemini or send email.
+
+## Selecting batches for students
+
+Instructors use **Manage batches** beside **Student credentials**. Turn **Visible to students** off to remove a batch from every student's submission list and block direct access to its PDFs, page images, findings, and student actions. Turn it on again to restore access with existing reviews intact. Instructors always retain access. To show one batch, leave only its checkbox selected. Changes save immediately; both instructors share the settings. New imports remain visible by default. Reimporting a hidden batch does not publish it again. Hiding does not delete data or reclaim disk space.
+
+## Freeing storage by deleting a batch
+
+In **Manage batches**, choose **Delete batch…**, review its name, submission/finding counts, and estimated file size, then type `DELETE` and confirm. This permanently removes that batch's registered submissions, findings, rebuttals, self-reports, instructor decisions, and matching website-owned import/cache folders. Other batches, student accounts, login keys, and roster details are kept. The app retains only a small deletion audit summary. Local source evaluations and independent backups are outside the deletion scope.
+
+Deleted import copies are removed so refreshing/restarting does not recreate the batch. Intentionally uploading the original ZIP again creates a fresh copy without deleted review history. Interrupted cleanup is retried on startup; if files are busy, **Finish pending deletions** appears in the panel. Hiding a batch is still the reversible option and does not reclaim its files. Deleting is permanent within the application; no existing batch is deleted merely by deploying this feature.

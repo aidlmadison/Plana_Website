@@ -18,6 +18,7 @@ import smtplib
 import sqlite3
 import student_access
 import run_imports
+import batch_storage
 import time
 from email.message import EmailMessage
 from urllib.parse import urlparse, parse_qs, unquote
@@ -77,6 +78,9 @@ def init_db(instructors: int = 2) -> None:
         CREATE TABLE IF NOT EXISTS audit (
           id INTEGER PRIMARY KEY, actor TEXT, finding TEXT, action TEXT, payload TEXT, at REAL);
         """)
+        db.execute("""CREATE TABLE IF NOT EXISTS batch_visibility (
+            assignment_id TEXT PRIMARY KEY REFERENCES assignments(id),
+            visible INTEGER NOT NULL DEFAULT 1, version INTEGER NOT NULL DEFAULT 0)""")
         student_access.initialize(db, DATA, password_hash)
         for index in range(1, instructors + 1):
             create_user(db, f"instructor{index}", "instructor")
@@ -181,7 +185,46 @@ def authorize_submission(db, user, sid):
     submission = db.execute("SELECT * FROM submissions WHERE id=?", (sid,)).fetchone()
     if not submission or (user["role"] == "student" and submission["student_id"] != user["id"]):
         raise Problem(404, "Submission not found.")
+    if user["role"] == "student":
+        visibility = db.execute("SELECT visible FROM batch_visibility WHERE assignment_id=?",
+                                (submission["assignment_id"],)).fetchone()
+        if visibility and not visibility["visible"]:
+            raise Problem(404, "Submission not found.")
     return submission
+
+
+def batch_roots():
+    return [DATA / "evaluations", IMPORTS, DATA / "imports"]
+
+
+def batches(db, user):
+    student_access.require_instructor(user)
+    rows = db.execute("""SELECT a.id,a.label,a.imported,
+        COALESCE(v.visible,1) visible,COALESCE(v.version,0) version,
+        (SELECT COUNT(*) FROM submissions s WHERE s.assignment_id=a.id) students
+        FROM assignments a LEFT JOIN batch_visibility v ON v.assignment_id=a.id
+        ORDER BY a.imported DESC,a.id""").fetchall()
+    return [{**dict(row), "visible": bool(row["visible"])} for row in rows]
+
+
+def set_batch_visibility(db, user, data):
+    student_access.require_instructor(user)
+    if type(data.get("visible")) is not bool or type(data.get("version")) is not int:
+        raise Problem(400, "Choose whether this batch is visible to students.")
+    db.execute("BEGIN IMMEDIATE")
+    assignment = data.get("assignment")
+    if not isinstance(assignment, str) or not db.execute("SELECT 1 FROM assignments WHERE id=?", (assignment,)).fetchone():
+        raise Problem(404, "Evaluation batch not found.")
+    row = db.execute("SELECT version FROM batch_visibility WHERE assignment_id=?", (assignment,)).fetchone()
+    version = row["version"] if row else 0
+    if version != data["version"]:
+        raise Problem(409, "Another instructor changed this batch. Refresh the batch list and try again.")
+    db.execute("""INSERT INTO batch_visibility(assignment_id,visible,version) VALUES (?,?,?)
+        ON CONFLICT(assignment_id) DO UPDATE SET visible=excluded.visible,version=excluded.version""",
+        (assignment, int(data["visible"]), version + 1))
+    db.execute("INSERT INTO audit(actor,finding,action,payload,at) VALUES (?,?,?,?,?)",
+        (user["id"], None, "batch_visibility", json.dumps({"assignment": assignment, "visible": data["visible"]}), time.time()))
+    return {"saved": True}
 
 
 def change_finding(db, user, data):
@@ -317,6 +360,15 @@ class Handler(BaseHTTPRequestHandler):
                 user = self.current_user(db)
                 if route.path == "/api/me":
                     return self.respond(200, {"id": user["id"], "role": user["role"], "csrf": user["csrf"]})
+                if route.path == "/api/batches/delete-preview":
+                    student_access.require_instructor(user)
+                    return self.respond(200, batch_storage.preview(db, query.get("assignment", [""])[0], batch_roots()))
+                if route.path == "/api/batches/storage":
+                    student_access.require_instructor(user)
+                    pending = DATA / ".deleting"
+                    return self.respond(200, {"pending": sum(1 for job in pending.iterdir() if job.is_dir()) if pending.is_dir() else 0})
+                if route.path == "/api/batches":
+                    return self.respond(200, batches(db, user))
                 if route.path == "/api/credentials":
                     return self.respond(200, student_access.credentials(db, user))
                 if route.path == "/api/credentials.csv":
@@ -329,7 +381,7 @@ class Handler(BaseHTTPRequestHandler):
                     sql = """SELECT s.*, a.label, a.imported,
                        (SELECT COUNT(*) FROM findings f WHERE f.submission_id=s.id AND f.status='pending') pending
                        FROM submissions s JOIN assignments a ON s.assignment_id=a.id"""
-                    rows = db.execute(sql + (" WHERE s.student_id=?" if user["role"] == "student" else "") +
+                    rows = db.execute(sql + (" WHERE s.student_id=? AND COALESCE((SELECT visible FROM batch_visibility v WHERE v.assignment_id=a.id),1)=1" if user["role"] == "student" else "") +
                                       " ORDER BY a.imported DESC,s.student_id", (user["id"],) if user["role"] == "student" else ()).fetchall()
                     return self.respond(200, [{k: row[k] for k in ("id", "student_id", "assignment_id", "label", "pages", "pending")}
                                              for row in rows])
@@ -360,7 +412,7 @@ class Handler(BaseHTTPRequestHandler):
                         pixmap = sheet.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
                         return self.respond(200, pixmap.tobytes("png"), "image/png")
             raise Problem(404, "Not found.")
-        except (Problem, student_access.AccessError) as error:
+        except (Problem, student_access.AccessError, batch_storage.StorageError) as error:
             self.respond(error.status, {"error": error.message})
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -414,17 +466,25 @@ class Handler(BaseHTTPRequestHandler):
                 elif route == "/api/access/send":
                     student_access.require_instructor(user)
                     raise student_access.AccessError(410, "Email sending was removed. Download student credentials for manual delivery.")
+                elif route == "/api/batches/delete":
+                    student_access.require_instructor(user)
+                    return_value = batch_storage.delete(db, user, data, DATA, batch_roots())
+                elif route == "/api/batches/cleanup":
+                    student_access.require_instructor(user)
+                    return_value = batch_storage.recover(db, DATA, batch_roots())
+                elif route == "/api/batches/visibility":
+                    return_value = set_batch_visibility(db, user, data)
                 elif route == "/api/action":
                     return_value = change_finding(db, user, data)
                 elif route == "/api/refresh-imports" and user["role"] == "instructor":
                     return_value = refresh_imports()
                 else:
                     raise Problem(404, "Not found.")
-            if route in ("/api/access/roster-save", "/api/refresh-imports", "/api/access/keys"):
+            if route in ("/api/access/roster-save", "/api/refresh-imports", "/api/access/keys", "/api/batches/delete"):
                 with connect() as export_db:
                     student_access.write_credentials_export(export_db, DATA)
             self.respond(200, return_value)
-        except (Problem, student_access.AccessError) as error:
+        except (Problem, student_access.AccessError, batch_storage.StorageError) as error:
             self.respond(error.status, {"error": error.message})
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -524,6 +584,8 @@ def main():
     if not 1 <= args.instructors <= 100:
         parser.error("Instructor count must be between 1 and 100")
     init_db(args.instructors)
+    with connect() as recovery_db:
+        batch_storage.recover(recovery_db, DATA, batch_roots())
     report = refresh_imports()
     imported = report["imported"]
     for error in report["errors"]:

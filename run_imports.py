@@ -9,6 +9,17 @@ import stat
 import tempfile
 import time
 import zipfile
+import threading
+from functools import wraps
+
+STORAGE_LOCK = threading.RLock()
+
+def serialized_storage(function):
+    @wraps(function)
+    def guarded(*args, **kwargs):
+        with STORAGE_LOCK:
+            return function(*args, **kwargs)
+    return guarded
 
 import fitz
 from run_bundle import inspect_run, run_files
@@ -58,6 +69,7 @@ def cache_run(info, data_root):
     return cached
 
 
+@serialized_storage
 def import_run(folder, data_root, connect, create_user):
     info = inspect_run(Path(folder))
     with connect() as db:
@@ -119,6 +131,7 @@ def import_run(folder, data_root, connect, create_user):
     return len(prepared)
 
 
+@serialized_storage
 def import_available(roots, data_root, connect, create_user):
     report = {"imported": 0, "reused": 0, "errors": []}
     for folder in discover_runs(roots):
@@ -131,6 +144,7 @@ def import_available(roots, data_root, connect, create_user):
     return report
 
 
+@serialized_storage
 def receive_archive(stream, length, imports_root, filename, maximum=250 * 1024 * 1024):
     """Receive one run ZIP; reject traversal, symlinks, duplicate paths, and bombs."""
     if type(length) is not int or not 0 < length <= maximum:
