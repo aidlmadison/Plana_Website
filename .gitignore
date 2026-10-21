@@ -1,0 +1,10 @@
+data/
+__pycache__/
+*.py[cod]
+.venv/
+.env
+*.log
+
+# Evaluation inbox is private; deploy code separately from student data.
+imports/*
+!imports/README.md

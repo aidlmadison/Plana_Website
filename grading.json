@@ -1,0 +1,6 @@
+{
+  "maximum": 60,
+  "base_deduction": 1,
+  "repeat_decay": 0.5,
+  "self_report_credit": 1
+}

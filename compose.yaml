@@ -1,0 +1,14 @@
+services:
+  plana:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8765:8000"
+    environment:
+      PLANA_DATA_DIR: /var/lib/plana
+      PLANA_IMPORTS_DIR: /var/lib/plana/imports
+      PLANA_HTTPS: ${PLANA_HTTPS:-0}
+    volumes:
+      - plana-data:/var/lib/plana
+volumes:
+  plana-data:
